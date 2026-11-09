@@ -137,10 +137,15 @@ function officialConnectionSource() {
   walk(`${pnpmHome}/global`, 6);
 
   if (found.length === 0) return undefined;
-  // 多版本时取路径字典序最大的（近似最高版本），确定性且不依赖 readdir 顺序。
-  found.sort();
-  const path = found[found.length - 1];
-  return { path, source: readFileSync(path, 'utf8') };
+  // 去重后按路径排序，保证确定性且不依赖 readdir 顺序。
+  // 返回**全部**已安装副本：契约必须在每个被声明支持的版本上都成立。
+  const unique = [...new Set(found)].sort();
+  return unique.map((path) => ({ path, source: readFileSync(path, 'utf8') }));
+}
+
+/** 从路径里取出 dsh-client-connection 的版本号。 */
+function versionOfPath(path) {
+  return path.match(/dsh-client-connection@([^_/]+)/)?.[1];
 }
 
 test('contract: official launch-token validation reads only browserAuth.launchToken', () => {
@@ -150,27 +155,78 @@ test('contract: official launch-token validation reads only browserAuth.launchTo
     'the official @deepseek-ai/dsh-client-connection package must be discoverable; '
     + 'without it this contract test would assert nothing (a vacuous pass)',
   );
-  const { path, source } = found;
 
-  // 三条消费路径都必须比对 this.launchToken —— 单字段改写才足够。
-  assert.match(
-    source,
-    /tokenMatches\(tokens\.join\(""\), this\.launchToken\)/,
-    `authorizeIndex/authorizeConnect must compare against this.launchToken (${path})`,
+  // 对**每一个**已安装副本断言，而不是只看最新的那个：
+  // engines.dsh 里声明的每个版本都必须真正满足这套前提。
+  for (const { path, source } of found) {
+    const v = versionOfPath(path) ?? 'unknown';
+    // 三条消费路径都必须比对 this.launchToken —— 单字段改写才足够。
+    assert.match(
+      source,
+      /tokenMatches\(tokens\.join\(""\), this\.launchToken\)/,
+      `[${v}] authorizeIndex/authorizeConnect must compare against this.launchToken (${path})`,
+    );
+    assert.match(
+      source,
+      /url\.searchParams\.set\(TOKEN_QUERY, this\.launchToken\)/,
+      `[${v}] authenticatedUrl must read this.launchToken for the startup banner (${path})`,
+    );
+    // 存储仍是模块私有 WeakMap，且只由 processLaunchToken 写入。
+    assert.match(
+      source,
+      /const PROCESS_LAUNCH_TOKENS = [^\n]*new WeakMap\(\)/,
+      `[${v}] token store shape changed (${path})`,
+    );
+    assert.match(
+      source,
+      /PROCESS_LAUNCH_TOKENS\.set\(owner, created\)/,
+      `[${v}] token store write site changed (${path})`,
+    );
+    // 服务必须在 await BrowserAuth.create 之后才 provide，否则 inject 回调会早于随机值生成。
+    assert.match(
+      source,
+      /new HostConnectionService\(ctx, trustedHosts, await BrowserAuth\.create\(/,
+      `[${v}] connection service provide ordering changed; the inject callback may now run too early (${path})`,
+    );
+  }
+});
+
+test('declared dsh versions are exactly the ones verified, with no open-ended range', () => {
+  const pkg = JSON.parse(readFileSync(`${ROOT}package.json`, 'utf8'));
+
+  // 兼容性门禁读的是**顶层** engines.dsh（app-boot 的 unmetRequirements 只看 fields.engines）。
+  // 嵌套的 dsh.engines 没有任何读取方，写了等于没写 —— 钉住这一点防止退回死配置。
+  assert.equal(
+    pkg.dsh?.engines,
+    undefined,
+    'engines.dsh must be TOP-LEVEL: the compatibility gate reads fields.engines and ignores dsh.engines',
   );
-  assert.match(
-    source,
-    /url\.searchParams\.set\(TOKEN_QUERY, this\.launchToken\)/,
-    `authenticatedUrl must read this.launchToken for the startup banner (${path})`,
+  const range = pkg.engines?.dsh;
+  assert.equal(typeof range, 'string', 'package.json must declare top-level engines.dsh');
+
+  // 1) 不许出现开放上界：`>=` / `>` / `*` / `x` / `^` / `~` 都会把未发布版本也纳入声明。
+  assert.doesNotMatch(
+    range,
+    /[><*^~]|\bx\b/,
+    `engines.dsh must not claim unreleased versions; got ${JSON.stringify(range)}`,
   );
-  // 存储仍是模块私有 WeakMap，且只由 processLaunchToken 写入。
-  assert.match(source, /const PROCESS_LAUNCH_TOKENS = [^\n]*new WeakMap\(\)/, `token store shape changed (${path})`);
-  assert.match(source, /PROCESS_LAUNCH_TOKENS\.set\(owner, created\)/, `token store write site changed (${path})`);
-  // 服务必须在 await BrowserAuth.create 之后才 provide，否则 inject 回调会早于随机值生成。
-  assert.match(
-    source,
-    /new HostConnectionService\(ctx, trustedHosts, await BrowserAuth\.create\(/,
-    `connection service provide ordering changed; the inject callback may now run too early (${path})`,
+
+  // 2) 必须是「精确版本」的 || 列表。
+  const declared = range.split('||').map((s) => s.trim()).filter((s) => s.length > 0);
+  assert.ok(declared.length > 0, 'engines.dsh must declare at least one version');
+  for (const v of declared) {
+    assert.match(v, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, `not an exact version: ${JSON.stringify(v)}`);
+  }
+
+  // 3) 声明集合必须与「本机实际安装、且契约测试真正验证过」的版本集合一致。
+  //    多声明 = 谎报兼容；少声明 = 明明验过却不敢写。两者都算失败。
+  const found = officialConnectionSource();
+  assert.ok(found !== undefined, 'need the installed official package to cross-check the declared versions');
+  const installed = [...new Set(found.map(({ path }) => versionOfPath(path)).filter(Boolean))].sort();
+  assert.deepEqual(
+    [...declared].sort(),
+    installed,
+    `engines.dsh must equal the versions actually verified here; declared=${JSON.stringify(declared)} installed=${JSON.stringify(installed)}`,
   );
 });
 

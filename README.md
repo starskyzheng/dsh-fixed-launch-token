@@ -144,6 +144,39 @@ node --test tests/plugin.test.mjs
 
 `node --test tests/`（传目录）会以 MODULE_NOT_FOUND 失败，属 Node 的行为，请直接传文件。
 
+## 兼容的 dsh 版本
+
+`package.json` 的顶层 `engines.dsh` 只声明**实测验证过**的版本：
+
+```json
+"engines": { "dsh": "0.2.1-rc.2 || 0.2.2-rc.1" }
+```
+
+刻意不用 `>=` / `^` / `~` 这类开放区间——那会把**尚未发布**的版本也纳入声明，
+等于替官方未来的改动打包票。用精确版本列表，含义是「这两个我逐个验过」。
+
+验证方式（两件事都做了，不是只看代码）：
+
+1. **契约**：`tests/plugin.test.mjs` 会对本机安装的**每一个** `dsh-client-connection`
+   副本断言三条前提（校验读 `browserAuth.launchToken`、横幅同源、服务在
+   `await BrowserAuth.create` 之后才 provide）。某个版本不满足就直接 RED。
+2. **冷启动**：两个版本都真的起过 `dsh web`，确认横幅打出固定 token。
+
+未列出的版本会被 dsh 的兼容性门禁**直接跳过**该 bundle（不是静默降级）：
+
+```
+dsh: skipping profile bundle "dsh-fixed-launch-token": Error: Plugin
+dsh-fixed-launch-token@1.0.0 is incompatible with dsh 0.2.2-rc.1:
+requirements {"engines.dsh":"0.2.1-rc.2"}. ... grant the exact-version exemption ...
+```
+
+也就是说，在未验证的 dsh 上你会看到「插件没生效 + 一条明确的跳过原因」，
+而不是「以为固定了其实没有」。
+
+> 注意字段位置：兼容性门禁读的是**顶层** `engines.dsh`（app-boot 的
+> `unmetRequirements` 只看 `fields.engines`）。写成嵌套的 `dsh.engines.dsh`
+> **没有任何读取方**，等于没写。测试里钉了这一点。
+
 ## 限制
 
 - 固定 token 是**明文配置**。若要更强的保管，可改从 `ctx.credentials` 读取，
@@ -153,6 +186,8 @@ node --test tests/plugin.test.mjs
 - 依赖官方 `browserAuth.launchToken` 这一内部字段形状。这是刻意的取舍：官方
   没有提供固定 token 的开关，改这个字段是唯一不改官方包就能生效的路径，
   代价是官方改形状时需要跟着更新（届时插件会抛错而不是静默失效）。
+- `engines.dsh` 是**保守**声明：官方发新版本后需要有人真的验过才会加进来。
+  这是有意的——宁可让新版本上插件被跳过，也不要让它带着未验证的内部字段假设运行。
 
 ## License
 
