@@ -1,0 +1,17 @@
+# dsh-fixed-launch-token bundle patch。
+#
+# 插入一行 Host 插件，把 `dsh web` 的 launch token 固定为 config.fixedLaunchToken。
+# 只改写运行中 connection 服务的 browserAuth.launchToken，不替换 Connection 提供方、
+# 不引入免登录语义：不匹配的 token 仍然 401，Host/Origin 信任栅栏不变。
+#
+# 默认留空 ⇒ 插件不生效，官方随机 token 照旧。要用请在**你自己的**配置里设值：
+#   - 本地自用：把下面 fixedLaunchToken 填上；
+#   - 装成 bundle 供他人使用：在本 profile 的 cordis.patch.yml 里按 id 覆盖本行 config
+#     （用户 patch 是最后一层，优先级最高），示例见 README。
+- insert:
+    - id: fixed-launch-token
+      name: dsh-fixed-launch-token
+      config:
+        # 固定 token：必须 ≥16 字符，不得含空白、"?" 或 "#"。
+        # 留空 = 不固定（默认）。设置后需重启 dsh web 生效。
+        fixedLaunchToken: ""

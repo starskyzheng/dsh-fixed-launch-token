@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Fixed launch token",
+    "description": "Pins the dsh web launch token to a fixed configured value instead of a fresh random one per process."
+  }
+}

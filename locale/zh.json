@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "固定启动 token",
+    "description": "把 dsh web 的启动 token 固定为配置里写死的值，不再每次进程启动随机生成。"
+  }
+}

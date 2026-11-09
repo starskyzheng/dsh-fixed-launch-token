@@ -1,0 +1,40 @@
+{
+  "name": "dsh-fixed-launch-token",
+  "version": "1.0.0",
+  "description": "Pin the dsh web launch token (?token=...) to a fixed configured value instead of a per-process random one. Default inert: nothing happens until you set config.fixedLaunchToken.",
+  "icon": "./icon.svg",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "launch-token",
+    "browser-auth"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test tests/plugin.test.mjs"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.1-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
