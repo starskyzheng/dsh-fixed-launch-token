@@ -64,6 +64,37 @@ head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'
 
 约束：长度 16–256，不含空白、`?`、`#`。
 
+### 空 = 静默不生效
+
+出厂值和「不填」表达的都是同一件事：**不固定，官方随机 token 照旧**。
+以下写法**全部等价于不生效**，进程照常每次启动生成新的随机 token：
+
+| 写法 | 结果 |
+| --- | --- |
+| `fixedLaunchToken: ""` | 不生效 |
+| 整个 `config` 键都不写 | 不生效 |
+| `fixedLaunchToken: "   "`（纯空白） | 不生效 |
+| `fixedLaunchToken: null` / 数字 / 布尔 | 不生效 |
+
+唯一的可观测差异是启动日志里会多一行说明，方便你知道「插件在场但没启用」，
+而不是静默无痕：
+
+```
+dsh-fixed-launch-token: no fixedLaunchToken configured; leaving the official per-process random token in place (set config.fixedLaunchToken to pin it)
+```
+
+**空 = 静默不生效；非空但非法 = 抛错。** 两者刻意不同：
+
+| 写法 | 结果 |
+| --- | --- |
+| `fixedLaunchToken: "abc"`（太短） | **抛错**，不是静默忽略 |
+| `fixedLaunchToken: "含 空格 的值"` | **抛错** |
+| `fixedLaunchToken: "含?的值"` | **抛错** |
+
+写了值却不合法，说明你**打算**固定 token，那就该立刻报错让你知道没配上，
+而不是默默退回随机值、让你以为已经固定了。空串表达的是「我没打算固定」，
+属于正常默认状态。
+
 ## 工作原理（为什么是改实例字段）
 
 官方 `processLaunchToken(owner)` 把 token 存在模块私有
