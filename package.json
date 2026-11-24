@@ -30,7 +30,7 @@
     "test": "node --test tests/plugin.test.mjs"
   },
   "engines": {
-    "dsh": "0.2.1-rc.2 || 0.2.2-rc.1"
+    "dsh": "0.2.1-rc.2 || 0.2.2-rc.1 ||  0.2.2-rc.5"
   },
   "dsh": {
     "bundle": {
